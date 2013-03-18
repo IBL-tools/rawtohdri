@@ -37,136 +37,76 @@ ROTATE = '-t 270 '
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>
 """
-VERSION = '0.1.0'
 import os
 import sys
-import getopt
+import argparse
 import numpy as np
 import OpenEXR, Imath
 from multiprocessing import Pool
 from subprocess import Popen, PIPE
 
-# Various ways to call dcraw
-DCRAW  = 'dcraw -q 3 -4 -w -c '+ROTATE
-DCRAWV = 'dcraw -v -q 3 -4 -w -c '+ROTATE
+PNAME = 'raw2hdri'
+VERSION = '0.1.0'
+PROG_DESC = """
+%(prog)s batch-processes bracketed camera RAW files into exr format HDR
+images. It works with any raw file format dcraw supports. The only required
+argument is INPUT_RAW_DIR, in which case the default behavior is to dump the
+resulting HDRIs in the INPUT_RAW_DIR with the file name hdrout_%%04d.exr. The
+output images may alternately be nested in a dir named exr inside the input
+dir using the -n flag.  The size of the bracket steps may be set with the -e
+flag ( Default = ev 3 ). %(prog)s assumes bracketed images are ordered darkest
+exposure to brightest.
+"""
 
-def oops():
-        print """
-        Oops! You got some arguments wrong..."""
-        
-def usage(v=0):
-        """verbosity level. Currently 0-1 supported. (0=Summary 1=Verbose) """
-        if v >= 1:
-                print " rawtohdri Version: ", VERSION, "Copyright 2011 Aaron Estrada bin.echo@gmail.com"
-        if v >= 0:
-                print """
- Usage: stacker [OPTION]  INPUT_RAW_DIR """
-        if v >= 1:
-                print """
- raw2hdri batch-processes bracketed camera RAW files into exr format HDR
- images. It works with any raw file format dcraw supports. The only required
- argument is INPUT_RAW_DIR, in which case the default behavior is to dump the
- resulting HDRIs in the INPUT_RAW_DIR with the file name hdrout_%04d.exr . 
- The output images may alternately be nested in a dir named exr inside the
- input dir using the -n flag.  The size of the bracket steps may be set with
- the -e flag ( Default = ev 3 ). raw2hdri assumes bracketed images are ordered
- darkest exposure to brightest. """
-        if v >= 0:
-                print """
- Options:
- 
- -x, --chunk=NUM Number of images per HDR stack      ( Default = 3 )
- -e, --ev=BRACKET_EV     ( Default = 3 )
- -c, --center=CENTER_BRACKET  ( Default = 2 ) ( second exposure )
- -n, --nest      Nest output images in dir named "exr" in input dir
- -o, --out-basename=OUTPUT_IMAGES_BASENAME  ( Default = hdrout_%04d.exr )
- -d, --out-dir=OUTPUT_IMAGES_DIR            ( Default = input_images_dir )
- -l, --lo=LOWCLIP_VALUE   (Default 0.70)
- -H, --hi=HICLIP_VALUE    (Default 0.80)
- -h, --help   Use the long form --help for more detailed help & examples.
- -v, --verbose  Turn on verbose output in Workers
-                 """
-        if v >= 1:
-                print """ Examples:
-            ( Put some examples here ) 
-                """
+EPI = 'Examples: ( Put some examples here )'
+
+VSTR = PNAME + ' Version: ' + VERSION + ' Copyright 2011 Aaron Estrada <bin.echo@gmail.com>'
+
+# Various ways to call dcraw
+DCRAW  = 'dcraw -h -q 3 -4 -w -c '+ROTATE
+DCRAWV = 'dcraw -h -v -q 3 -4 -w -c '+ROTATE
 
 def getargv(argv):
-        """Returns args as dict ( key:value pairs ) """
-        args = dict()
-        args['chunk'] =           3
-        args['ev'] =              3
-        args['center'] =          2
-        args['nest'] =            False
-        args['output_basename'] = 'hdrout_'
-        args['output_dir'] =      None
-        args['lo'] =              0.7
-        args['hi'] =              0.8
-        args['verbose'] =         False
-        args['input_dir'] =       None
-                
-        try:
-                options, remainder = getopt.gnu_getopt(argv, 'x:e:c:no:d:l:H:hv',
-                ['chunk=', 'ev=', 'center=' ,'nest', 'out-basename=', 'out-dir=',
-                'lo=', 'hi=', 'help', 'verbose' ])
-        except getopt.GetoptError:
-                oops()
-                usage(0)                         
-                sys.exit(22)        
-        
-        for opt, arg in options:                
-                if opt in ('-h'):
-                    usage(0)
-                    sys.exit(0)
-                elif opt in ('--help'):
-                    usage(1)
-                    sys.exit(0)
-                elif opt in ('-x', '--chunk'):
-                    args['chunk'] = int(arg)
-                elif opt in ('-o', '--out-basename'):
-                    args['output_basename'] = arg
-                elif opt in ('-d', '--out-dir'):
-                    args['output_dir'] = arg
-                elif opt in ('-e', '--ev'):
-                    args['ev'] = int(arg)
-                elif opt in ('-c', '--center'):
-                    args['center'] = int(arg)
-                elif opt in ('-l', '--lo'):
-                    args['lo'] = float(arg)
-                elif opt in ('-H', '--hi'):
-                    args['hi'] = float(arg)
-                elif opt in ('-v', '--verbose'):
-                    args['verbose'] = True
-                elif opt in ('-n', '--nest'):
-                    args['nest'] = True
-                    
-        try:    # grab only first non-option arg as input_dir
-                args['input_dir'] = remainder[0]+'/'
-        except IndexError:
-                oops()
-                usage(0)
-                sys.exit(22)
-        
+        """Returns args as dictionary ( key:value pairs ) """
+
+        prsr = argparse.ArgumentParser(prog=PNAME, description=PROG_DESC, epilog=EPI)
+
+        # Add arguments
+        prsr.add_argument('input_dir', default=None,
+            help='Directory containing raw files')
+
+        prsr.add_argument('-x', '--chunk', type=int, default=3,
+            help='Number of images per HDR stack (Default = %(default)s)')
+        prsr.add_argument('-e', '--ev', type=int, default=3,
+            help='Bracket exposure value (Default = %(default)s)')
+        prsr.add_argument('-c', '--center', type=int, default=2,
+            help='Center bracket. Second exposure (Default = %(default)s)')
+        prsr.add_argument('-n', '--nest', action='store_true',
+            help='Nest outputs in dir named "exr" in input dir (Default = %(default)s)')
+        prsr.add_argument('-o', '--output-basename', default='hdrout_',
+            help='Base name of output images (Default = "%(default)s)"')
+        prsr.add_argument('-d', '--output-dir', default=None,
+            help='Output images directory (Default = input_dir)')
+        prsr.add_argument('-l', '--lo', type=float, default=0.7,
+            help='Low clip value (Default = %(default)s)')
+        prsr.add_argument('-H', '--hi', type=float, default=0.8,
+            help='Hi clip value (Default = %(default)s)')
+        prsr.add_argument('-v', '--verbose', action='store_true',
+            help='Turn on verbose output in Workers')
+        prsr.add_argument('--version', action='version', version=VSTR)
+
+        # Parse arguments
+        ns = prsr.parse_args(argv)
+
+        # Convert attributes to a dictionary
+        args = vars(ns)
+
         if args['nest'] == True:
-                args['output_dir'] = args['input_dir']+'exr'
+                args['output_dir'] = os.path.join(args['input_dir'], 'exr')
         # Make sure ouput_dir has something useful in it no matter what
         if args['output_dir'] == None:
                 args['output_dir'] = args['input_dir']               
-        
-        """ print debugging info
-        print 'ARGV      :', argv
-        print 'OPTIONS   :', options
-        print 'REMAINING :', remainder
-        print 'CHUNK     :', args['chunk']
-        print 'EV        :', args['ev']
-        print 'LO        :', args['lo']
-        print 'HI        :', args['hi']
-        print 'NEST      :', args['nest']
-        print 'INPUTDIR  :', args['input_dir']
-        print 'OUTPUTDIR :', args['output_dir']
-        print 'OUTPUTNAME:', args['output_basename']
-        print 'VERBOSE   :', args['verbose']
-        """
+
         return(args)
 
 def getFiles(dir):
@@ -326,11 +266,6 @@ def hdrStackLines(bg, fg, ev, lo=0.65, hi=0.85):
     return np.add(np.multiply(bg, np.subtract(1.0, fgMatte)), scaled_fg)
 
 if __name__ == '__main__':
-    try: # Test for no args
-        sys.argv[1]
-    except IndexError:
-        usage(0)
-        sys.exit(22)    
     args = getargv(sys.argv[1:])
     files = getFiles(args['input_dir'])
     # Sanity checks
