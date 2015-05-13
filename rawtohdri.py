@@ -46,7 +46,7 @@ from multiprocessing import Pool
 from subprocess import Popen, PIPE
 
 PNAME = 'raw2hdri'
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 PROG_DESC = """
 %(prog)s batch-processes bracketed camera RAW files into exr format HDR
 images. It works with any raw file format dcraw supports. The only required
