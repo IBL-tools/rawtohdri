@@ -1,0 +1,73 @@
+# Temporary swap files
+*~
+*.swp
+*.swo
+
+# Compiled Python bytecode
+*.py[cod]
+
+# C extensions
+*.so
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+var
+sdist
+develop-eggs
+.installed.cfg
+lib
+lib64
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+nosetests.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+
+# Image formats
+*.exr
+*.jpg
+*.jpeg
+#   Camera raw formats
+#       Canon
+*.crw
+*.CRW
+*.cr2
+*.CR2
+
+#       Nikon
+*.nef
+*.NEF
+*.nrw
+*.NRW
+
+#       Sony
+*.arw
+*.ARW
+*.srf
+*.SRF
+*.sr2
+*.SR2
+
+#       Adobe
+*.dng
+*.DNG
+
+# Misc. file extensions
+*.zip
