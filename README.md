@@ -34,6 +34,6 @@ If you are interested in packaging rawtohdri for your favorite distro, please co
 
 ###Details:
 
-Here is a description of the algorithm used by rawtohdri: [Algorithm](https://github.com/IBL-tools/raw-to-hdri/wiki/cliHelp)
+Here is a description of the algorithm used by rawtohdri: [Algorithm](https://github.com/IBL-tools/rawtohdri/wiki/rawtohdri-stacking-algorithm)
 
 At present, much of the heavy lifting (the actual HDRI stacking) in rawtohdri is done in pure Python and Numpy. As a result, conversion is definitely CPU bound by the Python interpreter. The algorithms in use are so simple (trivial really), I would expect a program like this to be I/O bound rather than CPU bound. Moving forward I plan to focus on improving the speed of rawtohdri. I already see some low hanging fruit in terms of possible speed improvements. Better implemented multiprocessing alone would lead to perhaps a 4x speed improvement on 4 core systems. Basic static typing optimizations in Cython would probably also lead to speed improvements without a lot of hassle.
