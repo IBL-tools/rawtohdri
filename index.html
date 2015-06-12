@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <title>Rawtohdri by IBL-tools</title>
+  </head>
+
+  <body>
+    <header>
+      <div class="inner">
+        <h1>Rawtohdri</h1>
+        <h2>rawtohdri Converts bracketed camera raw files directly to an OpenEXR format HDRI.</h2>
+        <a href="https://github.com/IBL-tools/rawtohdri" class="button"><small>View project on</small> GitHub</a>
+      </div>
+    </header>
+
+    <div id="content-wrapper">
+      <div class="inner clearfix">
+        <section id="main-content">
+          <h1>
+<a id="rawtohdri" class="anchor" href="#rawtohdri" aria-hidden="true"><span class="octicon octicon-link"></span></a>rawtohdri</h1>
+
+<h2>
+<a id="with-the-closing-of-google-code-this-is-the-new-official-home-of-rawtohdri" class="anchor" href="#with-the-closing-of-google-code-this-is-the-new-official-home-of-rawtohdri" aria-hidden="true"><span class="octicon octicon-link"></span></a>With the closing of Google Code, this is the new official home of rawtohdri.</h2>
+
+<h3>
+<a id="description" class="anchor" href="#description" aria-hidden="true"><span class="octicon octicon-link"></span></a>Description:</h3>
+
+<p>rawtohdri is a Python based program which takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal dependencies, requiring only dcraw, NumPy? and the LibOpenEXR bindings for python. rawtohdri's main features are process-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR.</p>
+
+<p>rawtohdri can process any raw format supported by dcraw.</p>
+
+<p>While perfectly usable in its current form (It meets my personal needs just fine), the pre-1.0 version is really just a proof-of-concept/prototype. I did it as an exercise to learn Python. There's plenty of room for improvement in speed. The next phase of development will focus on speed improvements.</p>
+
+<p>The program includes a Python class for reading 16 bit PPM files, which might be interesting for academic purposes.</p>
+
+<h3>
+<a id="getting-started" class="anchor" href="#getting-started" aria-hidden="true"><span class="octicon octicon-link"></span></a>Getting Started:</h3>
+
+<p>Here is the help text from rawtohdri: <a href="https://github.com/IBL-tools/raw-to-hdri/wiki/cliHelp">Help</a></p>
+
+<p>rawtohdri is a plain text Python script. Instillation is pretty straight forward on Linux and beyond Python 2.7 it has only three dependencies...</p>
+
+<ul>
+<li><a href="http://www.cybercom.net/%7Edcoffin/dcraw/">dcraw</a></li>
+<li><a href="http://numpy.scipy.org/">NumPy 1.6</a></li>
+<li><a href="http://excamera.com/sphinx/articles-openexr.html">OpenEXR bindings for Python</a></li>
+</ul>
+
+<p>You will need to install these dependencies on your own. (I will write a guide when I have the time)</p>
+
+<h3>
+<a id="help-wanted" class="anchor" href="#help-wanted" aria-hidden="true"><span class="octicon octicon-link"></span></a>Help Wanted:</h3>
+
+<p>We are looking for testers and collaborators. Do you have a camera that shoots raw? I'm interested to hear how rawtohdri works for you. Perhaps you can provide some bracketed raw files myself and others can use for testing.</p>
+
+<p>Any code review I can get is welcome. Patches and submissions are welcome also. If you are a Python module hacker interested in helping out, let's talk!</p>
+
+<p>If you are interested in packaging rawtohdri for your favorite distro, please contact me.</p>
+
+<h3>
+<a id="details" class="anchor" href="#details" aria-hidden="true"><span class="octicon octicon-link"></span></a>Details:</h3>
+
+<p>Here is a description of the algorithm used by rawtohdri: <a href="https://github.com/IBL-tools/rawtohdri/wiki/rawtohdri-stacking-algorithm">Algorithm</a></p>
+
+<p>At present, much of the heavy lifting (the actual HDRI stacking) in rawtohdri is done in pure Python and Numpy. As a result, conversion is definitely CPU bound by the Python interpreter. The algorithms in use are so simple (trivial really), I would expect a program like this to be I/O bound rather than CPU bound. Moving forward I plan to focus on improving the speed of rawtohdri. I already see some low hanging fruit in terms of possible speed improvements. Better implemented multiprocessing alone would lead to perhaps a 4x speed improvement on 4 core systems. Basic static typing optimizations in Cython would probably also lead to speed improvements without a lot of hassle.</p>
+        </section>
+
+        <aside id="sidebar">
+          <a href="https://github.com/IBL-tools/rawtohdri/zipball/master" class="button">
+            <small>Download</small>
+            .zip file
+          </a>
+          <a href="https://github.com/IBL-tools/rawtohdri/tarball/master" class="button">
+            <small>Download</small>
+            .tar.gz file
+          </a>
+
+          <p class="repo-owner"><a href="https://github.com/IBL-tools/rawtohdri"></a> is maintained by <a href="https://github.com/IBL-tools">IBL-tools</a>.</p>
+
+          <p>This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
+        </aside>
+      </div>
+    </div>
+
+  
+  </body>
+</html>
