@@ -4,7 +4,7 @@
 
 ###Description:
 
-rawtohdri is a Python based program which takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal dependencies, requiring only dcraw, NumPy? and the LibOpenEXR bindings for python. rawtohdri's main features are process-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR.
+rawtohdri is a Python based program which takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal dependencies, requiring only dcraw, NumPy and the LibOpenEXR bindings for python. rawtohdri's main features are process-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR.
 
 rawtohdri can process any raw format supported by dcraw.
 
