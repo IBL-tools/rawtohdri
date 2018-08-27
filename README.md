@@ -1,8 +1,8 @@
-#rawtohdri
+# rawtohdri
 
-##With the closing of Google Code, this is the new official home of rawtohdri. 
+## With the closing of Google Code, this is the new official home of rawtohdri. 
 
-###Description:
+### Description:
 
 rawtohdri is a Python based program which takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal dependencies, requiring only dcraw, NumPy and the LibOpenEXR bindings for python. rawtohdri's main features are process-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR.
 
@@ -12,7 +12,7 @@ While perfectly usable in its current form (It meets my personal needs just fine
 
 The program includes a Python class for reading 16 bit PPM files, which might be interesting for academic purposes.
 
-###Getting Started:
+### Getting Started:
 
 Here is the help text from rawtohdri: [Help](https://github.com/IBL-tools/raw-to-hdri/wiki/cliHelp)
 
@@ -24,7 +24,7 @@ rawtohdri is a plain text Python script. Instillation is pretty straight forward
 
 You will need to install these dependencies on your own. (I will write a guide when I have the time)
 
-###Help Wanted:
+### Help Wanted:
 
 We are looking for testers and collaborators. Do you have a camera that shoots raw? I'm interested to hear how rawtohdri works for you. Perhaps you can provide some bracketed raw files myself and others can use for testing.
 
@@ -32,7 +32,7 @@ Any code review I can get is welcome. Patches and submissions are welcome also. 
 
 If you are interested in packaging rawtohdri for your favorite distro, please contact me.
 
-###Details:
+### Details:
 
 Here is a description of the algorithm used by rawtohdri: [Algorithm](https://github.com/IBL-tools/rawtohdri/wiki/rawtohdri-stacking-algorithm)
 
