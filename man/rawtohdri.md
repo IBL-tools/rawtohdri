@@ -6,7 +6,7 @@
 
 ## SYNOPSIS
 
-`rawtohdri <input_dir> [options]`
+`rawtohdri [<input_dir>] [options]`
 
 ## DESCRIPTION
 
@@ -15,6 +15,35 @@
 The application is designed from the ground up for extreme performance and memory efficiency. By utilizing Common Lisp (via SBCL) coupled with native AVX2 SIMD instructions, it achieves speed levels comparable to or exceeding hand-tuned C/C++ implementations, processing full-resolution RAW exposure brackets into a finished HDR image in under 1.5 seconds.
 
 Additionally, the tool copies important EXIF metadata—such as ISO, shutter speed, aperture, focal length, and capture date—from the designated "center" RAW file and embeds it directly into the output OpenEXR header.
+
+## INTERACTIVE TUI MODE
+
+If started without arguments (or with the `--tui` option), the application runs in an interactive terminal user interface. The TUI consists of three panels:
+
+### Settings Panel
+
+Allows configuring stacking parameters interactively:
+* Pressing `n` toggles Nest Mode.
+* Pressing `f` toggles Float Mode (HALF vs. FLOAT).
+* Pressing `z` toggles Compression Mode (ZIP vs. ZIPS).
+* Pressing `c` increments the Chunk Size, while `C` (Shift-C) decrements it.
+* Pressing `e` increments the EV Spacing, while `E` (Shift-E) decrements it.
+* Pressing `t` increments the Max Decode Threads, while `T` (Shift-T) decrements it.
+
+### File Browser Panel
+
+Allows navigating directories to locate bracketed RAW exposure folders:
+* Navigate selections using the **Up/Down** arrow keys or the mouse.
+* Press **Enter** or double-click a folder to enter it.
+* Press **Backspace** to return to the parent directory.
+
+### Queue Panel
+
+Manages directory stacking runs:
+* Press **Space** to queue the highlighted folder.
+* Press `a` (or click **Add Selected Dir** / **Add Current Dir** on the actions bar) to queue directories dynamically.
+* Press `x` (or click **Clear Queue** on the actions bar) to reset the queue.
+* Press `s` (or click **Start Stacking** on the actions bar) to begin multi-threaded batch stacking. A real-time overall progress bar, per-directory progress bar, and speed logs will be displayed.
 
 ## OPTIONS
 
@@ -46,6 +75,8 @@ Additionally, the tool copies important EXIF metadata—such as ISO, shutter spe
   Instructs the OpenEXR writer to use ZIPS (single-scanline block) compression instead of the default ZIP (16-scanline block) compression.
 * `-t`, `--max-decode-threads <int>`  
   Specifies the maximum number of parallel threads used to decode and demosaic RAW images. Set to `0` for unlimited (parallelizes decoding across all cores). Set to `1` to run sequentially, which drastically reduces memory consumption under RAM pressure. *(Default: 0)*
+* `--tui`  
+  Launches the interactive Terminal User Interface (TUI). This is also the default behavior if no command line arguments are provided.
 * `-h`, `--help`  
   Displays the help text and exits.
 
@@ -70,6 +101,11 @@ To maintain maximum compatibility without sacrificing performance, the program c
 ### Multi-Threaded Custom OpenEXR Writer
 
 To bypass the overhead of heavy C++ OpenEXR libraries, **rawtohdri** features a custom, lightweight, multi-threaded OpenEXR writer written in pure Common Lisp. It parallelizes Zlib compression across up to 8 threads using ZIP block compression (16-scanline blocks).
+
+### Interactive Terminal User Interface (TUI)
+
+For convenient batch stacking and file management, **rawtohdri** includes a rich terminal-based user interface using **cl-tuition**. It features full mouse and keyboard navigation, an interactive file browser, live checkbox toggles for stacking options, a batch processing queue, and real-time per-directory/overall progress meters.
+
 
 ## EXAMPLES
 

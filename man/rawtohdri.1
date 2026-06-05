@@ -1,9 +1,9 @@
-.TH RAWTOHDRI 1 "June 2026" "v1.0.0" "rawtohdri manual"
+.TH RAWTOHDRI 1 "June 2026" "v1.1.0" "rawtohdri manual"
 .SH NAME
 rawtohdri \- high-performance parallel camera raw stacker to OpenEXR
 .SH SYNOPSIS
 .B rawtohdri
-.I <input_dir>
+[\fI<input_dir>\fR]
 [\fBoptions\fR]
 .SH DESCRIPTION
 .B rawtohdri
@@ -12,6 +12,91 @@ takes a bracketed set of camera RAW files, converts them directly to linear ligh
 The application is designed from the ground up for extreme performance and memory efficiency. By utilizing Common Lisp (via SBCL) coupled with native AVX2 SIMD instructions, it achieves speed levels comparable to or exceeding hand-tuned C/C++ implementations, processing full-resolution RAW exposure brackets into a finished HDR image in under 1.5 seconds.
 .PP
 Additionally, the tool copies important EXIF metadata\(emsuch as ISO, shutter speed, aperture, focal length, and capture date\(emfrom the designated "center" RAW file and embeds it directly into the output OpenEXR header.
+.SH INTERACTIVE TUI MODE
+If started without arguments (or with the
+.B \-\-tui
+option), the application runs in an interactive terminal user interface. The TUI consists of three panels:
+.PP
+.B Settings Panel
+.RS
+Allows configuring stacking parameters interactively:
+.IP \(bu 2
+Pressing
+.B n
+toggles Nest Mode.
+.IP \(bu 2
+Pressing
+.B f
+toggles Float Mode (HALF vs. FLOAT).
+.IP \(bu 2
+Pressing
+.B z
+toggles Compression Mode (ZIP vs. ZIPS).
+.IP \(bu 2
+Pressing
+.B c
+increments the Chunk Size, while
+.B Shift-C
+decrements it.
+.IP \(bu 2
+Pressing
+.B e
+increments the EV Spacing, while
+.B Shift-E
+decrements it.
+.IP \(bu 2
+Pressing
+.B t
+increments the Max Decode Threads, while
+.B Shift-T
+decrements it.
+.RE
+.PP
+.B File Browser Panel
+.RS
+Allows navigating directories to locate bracketed RAW exposure folders:
+.IP \(bu 2
+Navigate selections using the
+.B Up/Down
+arrow keys or the mouse.
+.IP \(bu 2
+Press
+.B Enter
+or double-click a folder to enter it.
+.IP \(bu 2
+Press
+.B Backspace
+to return to the parent directory.
+.RE
+.PP
+.B Queue Panel
+.RS
+Manages directory stacking runs:
+.IP \(bu 2
+Press
+.B Space
+to queue the highlighted folder.
+.IP \(bu 2
+Press
+.B a
+(or click
+.B Add Selected Dir
+or
+.B Add Current Dir
+on the actions bar) to queue directories dynamically.
+.IP \(bu 2
+Press
+.B x
+(or click
+.B Clear Queue
+on the actions bar) to reset the queue.
+.IP \(bu 2
+Press
+.B s
+(or click
+.B Start Stacking
+on the actions bar) to begin multi-threaded batch stacking. A real-time overall progress bar, per-directory progress bar, and speed logs will be displayed.
+.RE
 .SH OPTIONS
 .SS Main Options
 .TP
@@ -54,6 +139,9 @@ Instructs the OpenEXR writer to use ZIPS (single-scanline block) compression ins
 .BI \-t ", " \-\-max\-decode\-threads " <int>"
 Specifies the maximum number of parallel threads used to decode and demosaic RAW images. Set to \fB0\fR for unlimited (parallelizes decoding across all cores). Set to \fB1\fR to run sequentially, which drastically reduces memory consumption under RAM pressure. (Default: 0)
 .TP
+.B \-\-tui
+Launches the interactive Terminal User Interface (TUI). This is also the default behavior if no command line arguments are provided.
+.TP
 .B \-h ", " \-\-help
 Displays the help text and exits.
 .SH UNIQUE FEATURES & OPTIMIZATIONS
@@ -67,6 +155,8 @@ The critical stacking loop is hand-vectorized using AVX2 SIMD instructions (via 
 To maintain maximum compatibility without sacrificing performance, the program checks CPU capabilities at startup using `CPUID` instruction queries. If AVX2 is supported, it executes the vectorized path; on older CPUs, it automatically falls back to a clean scalar loop instead of crashing.
 .SS Multi-Threaded Custom OpenEXR Writer
 To bypass the overhead of heavy C++ OpenEXR libraries, \fBrawtohdri\fR features a custom, lightweight, multi-threaded OpenEXR writer written in pure Common Lisp. It parallelizes Zlib compression across up to 8 threads using ZIP block compression (16-scanline blocks).
+.SS Interactive Terminal User Interface (TUI)
+For convenient batch stacking and file management, \fBrawtohdri\fR includes a rich terminal-based user interface using \fBcl-tuition\fR. It features full mouse and keyboard navigation, an interactive file browser, live checkbox toggles for stacking options, a batch processing queue, and real-time per-directory/overall progress meters.
 .SH EXAMPLES
 .PP
 Process all RAW files in \fB/path/to/shots/\fR in groups of 3 (using default options) and save EXRs in the same directory:

@@ -13,6 +13,9 @@
 
 (in-package :raw-to-hdri)
 
+(defparameter *version*
+  #.(asdf:component-version (asdf:find-system :rawtohdri)))
+
 ;;;; -------------------------------------------------------------------------
 ;;;; Structs & CLI Argument Parser
 ;;;; -------------------------------------------------------------------------
@@ -31,10 +34,12 @@
   (rotate 0)
   (float-mode nil)
   (zip-mode :zip)
-  (max-decode-threads 0))
+  (max-decode-threads 0)
+  (tui-mode nil))
 
 (defun print-help ()
-  (format t "Usage: rawtohdri <input_dir> [options]
+  (format t "rawtohdri version ~A
+Usage: rawtohdri <input_dir> [options]
 
 Options:
   -x, --chunk <int>           Number of bracketed shots per HDR image (default: 3)
@@ -50,11 +55,15 @@ Options:
   --float                     Save EXR in FLOAT (32-bit) precision instead of HALF (16-bit)
   --zips                      Save EXR with ZIPS (single-scanline block) instead of ZIP (16-scanline block)
   -t, --max-decode-threads <int> Max parallel threads for decoding RAWs (default: 0, unlimited)
+  --tui                       Launch the terminal user interface
+  -V, --version               Show version information
   -h, --help                  Show this help text
-"))
+" *version*))
 
 (defun parse-cli-args (argv)
   (let ((args (make-cli-args)))
+    (when (null argv)
+      (setf (cli-args-tui-mode args) t))
     (labels ((parse-next (list)
                (when list
                  (let ((opt (first list)))
@@ -98,6 +107,12 @@ Options:
                      ((string= opt "--zips")
                       (setf (cli-args-zip-mode args) :zips)
                       (parse-next (cdr list)))
+                     ((string= opt "--tui")
+                      (setf (cli-args-tui-mode args) t)
+                      (parse-next (cdr list)))
+                     ((or (string= opt "-V") (string= opt "--version"))
+                      (format t "rawtohdri version ~A~%" *version*)
+                      (sb-ext:exit :code 0))
                      ((or (string= opt "-h") (string= opt "--help"))
                       (print-help)
                       (sb-ext:exit :code 0))
@@ -113,33 +128,31 @@ Options:
                           (setf (cli-args-input-dir args) opt))
                       (parse-next (cdr list))))))))
       (parse-next argv)
-      (unless (cli-args-input-dir args)
-        (format t "Error: input directory is required.~%")
-        (print-help)
-        (sb-ext:exit :code 1))
-      
-      ;; Verify input directory exists
-      (unless (uiop:directory-exists-p (cli-args-input-dir args))
-        (format t "Error: input directory ~S does not exist.~%" (cli-args-input-dir args))
-        (sb-ext:exit :code 1))
-      
-      ;; Ensure input-dir string is absolute or correctly formatted
-      (setf (cli-args-input-dir args)
-            (namestring (uiop:directory-exists-p (cli-args-input-dir args))))
-      
-      ;; Handle nesting or default output directory
-      (if (cli-args-nest args)
-          (let ((nested-path (merge-pathnames "exr/" (cli-args-input-dir args))))
-            (ensure-directories-exist nested-path)
-            (setf (cli-args-output-dir args) (namestring nested-path)))
-          (if (cli-args-output-dir args)
-              (let ((out-path (uiop:directory-exists-p (cli-args-output-dir args))))
-                (if out-path
-                    (setf (cli-args-output-dir args) (namestring out-path))
-                    (progn
-                      (ensure-directories-exist (cli-args-output-dir args))
-                      (setf (cli-args-output-dir args) (namestring (uiop:directory-exists-p (cli-args-output-dir args)))))))
-              (setf (cli-args-output-dir args) (cli-args-input-dir args))))
+      (unless (cli-args-tui-mode args)
+        (unless (cli-args-input-dir args)
+          (format t "Error: input directory is required.~%")
+          (print-help)
+          (sb-ext:exit :code 1))
+        
+        (unless (uiop:directory-exists-p (cli-args-input-dir args))
+          (format t "Error: input directory ~S does not exist.~%" (cli-args-input-dir args))
+          (sb-ext:exit :code 1))
+        
+        (setf (cli-args-input-dir args)
+              (namestring (uiop:directory-exists-p (cli-args-input-dir args))))
+        
+        (if (cli-args-nest args)
+            (let ((nested-path (merge-pathnames "exr/" (cli-args-input-dir args))))
+              (ensure-directories-exist nested-path)
+              (setf (cli-args-output-dir args) (namestring nested-path)))
+            (if (cli-args-output-dir args)
+                (let ((out-path (uiop:directory-exists-p (cli-args-output-dir args))))
+                  (if out-path
+                      (setf (cli-args-output-dir args) (namestring out-path))
+                      (progn
+                        (ensure-directories-exist (cli-args-output-dir args))
+                        (setf (cli-args-output-dir args) (namestring (uiop:directory-exists-p (cli-args-output-dir args)))))))
+                (setf (cli-args-output-dir args) (cli-args-input-dir args)))))
       args)))
 
 ;;;; -------------------------------------------------------------------------
@@ -561,34 +574,32 @@ Otherwise, uses worker threads to process files concurrently."
          (args (handler-case (parse-cli-args argv)
                  (error (c)
                    (format t "Error parsing options: ~A~%" c)
-                   (sb-ext:exit :code 1))))
-         (verbose (cli-args-verbose args))
-         (files (get-sorted-files (cli-args-input-dir args))))
-    
-    (unless files
-      (format t "No raw files found in directory: ~A~%" (cli-args-input-dir args))
-      (sb-ext:exit :code 0))
-    
-    (let* ((chunks (group-by-chunks files (cli-args-chunk args)))
-           (total-chunks (length chunks)))
-      (when verbose
-        (format t "Found ~D total files. Grouped into ~D chunks of size ~D.~%"
-                (length files) total-chunks (cli-args-chunk args)))
-      
-      (loop for chunk in chunks
-            for idx from 1
-            do (handler-case
-                   (if (< (length chunk) (cli-args-chunk args))
-                       (format t "Warning: skipping incomplete chunk ~D/~D of size ~D (expected ~D)~%"
-                               idx total-chunks (length chunk) (cli-args-chunk args))
-                       (process-chunk chunk idx total-chunks args))
-                 (error (c)
-                   (format t "Fatal error processing chunk ~D: ~A~%" idx c)
-                   (sb-ext:exit :code 1))))
-      
-      (when verbose
-        (let ((total-sec (/ (coerce (- (get-internal-real-time) t-start) 'single-float)
-                            internal-time-units-per-second)))
-          (format t "All chunks processed. Total execution time: ~,3F seconds~%" total-sec))))
-    
-    (sb-ext:exit :code 0)))
+                   (sb-ext:exit :code 1)))))
+    (if (cli-args-tui-mode args)
+        (progn
+          (run-tui args)
+          (sb-ext:exit :code 0))
+        (let ((files (get-sorted-files (cli-args-input-dir args))))
+          (unless files
+            (format t "No raw files found in directory: ~A~%" (cli-args-input-dir args))
+            (sb-ext:exit :code 0))
+          (let* ((chunks (group-by-chunks files (cli-args-chunk args)))
+                 (total-chunks (length chunks)))
+            (when (cli-args-verbose args)
+              (format t "Found ~D total files. Grouped into ~D chunks of size ~D.~%"
+                      (length files) total-chunks (cli-args-chunk args)))
+            (loop for chunk in chunks
+                  for idx from 1
+                  do (handler-case
+                         (if (< (length chunk) (cli-args-chunk args))
+                             (format t "Warning: skipping incomplete chunk ~D/~D of size ~D (expected ~D)~%"
+                                     idx total-chunks (length chunk) (cli-args-chunk args))
+                             (process-chunk chunk idx total-chunks args))
+                       (error (c)
+                         (format t "Fatal error processing chunk ~D: ~A~%" idx c)
+                         (sb-ext:exit :code 1))))
+            (when (cli-args-verbose args)
+              (let ((total-sec (/ (coerce (- (get-internal-real-time) t-start) 'single-float)
+                                  internal-time-units-per-second)))
+                (format t "All chunks processed. Total execution time: ~,3F seconds~%" total-sec))))
+          (sb-ext:exit :code 0)))))

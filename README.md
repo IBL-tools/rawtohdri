@@ -6,11 +6,21 @@
 
 rawtohdri takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR format (HALF or FLOAT) with ZIP compression. It has minimal external dependencies requiring only LibRaw, which most distros include in their package systems. (All Lisp dependencies are available via Quicklisp so that part is easy). rawtohdri's main claims to fame are it's speed and efficiency. It features thread-parallel conversion of raw files and the ability to convert the integer output from LibRaw (16 bit integers) to floating point HDRIs in-memory using the least amount of memory possible (one buffer for the final composition) with zero-copy for the final EXR write to disk, which is also multi-threaded. It copies the important bits of EXIF metadata like exposure and ISO from the "center" RAW file to the output EXR.
 
-rawtohdri includes a simple multi-threaded pure Lisp implementation of the EXR format which might be interested to some. Once I get it a bit more developed, I'll be extracting it into its own repository! (Why? Did I bother making my own implementation of the EXR format? Bacause I only needed part of the standard and the full library is huge. It only supports ZIP/ZIPS codec, RGBA, HALF and FLOAT but it does support the data window and display window. (In this particular case, the data window is never used.) The EXR saver does what it needs to do and it's BLAZING FAST with essentially no bloat.
+rawtohdri includes a simple multi-threaded pure Lisp implementation of the EXR format which might be interested to some. Once I get it a bit more developed, I'll be extracting it into its own repository! Why did I bother making my own implementation of an OpenEXR writer? Because I only needed part of the standard and the full library is huge. It only supports ZIP/ZIPS codec, RGBA, HALF and FLOAT but it does support the data window and display window. (In this particular case, the data window is never used.) The EXR saver does what it needs to do and it's BLAZING FAST with essentially no bloat.
 
 rawtohdri can process any RAW format supported by LibRaw and it will write to any output format you want... as long as it's OpenEXR. 🤣
 
 This version of rawtohdri is realeased under the **MIT** license. The old python version is realeased under the **GPL** license and is still included in the repo for historical purposes. (it includes a pure Python class for reading 16 bit PPM files, which might be interesting for academic purposes.)
+
+### Features
+
+* **Dynamic TUI (Terminal User Interface):** Interactive, keyboard-and-mouse-driven file and directory browser to navigate your filesystem, dynamically queue multiple raw bracket directories, and track real-time progress (per-directory and overall progress bars) with inline status logs.
+* **Rapid-Fire Stacking Engine:** Thread-parallel demosaicing of RAW files (one thread per RAW file in the bracket) and ultra-fast, zero-copy floating-point HDRI assembly.
+* **Aggressive Memory Optimization:** Demosaiced source images are loaded as 16-bit integer RGB buffers rather than floats, halving raw memory requirements. Stacking accumulates directly into a single target HDRI float buffer on-the-fly, preventing redundant memory allocations.
+* **AVX2 SIMD Acceleration:** Dynamic compiler-optimized vectorization (via `sb-simd`) processes 8 floating-point components per instruction cycle. Cuts the main stacking loop execution time in half with safe fallback mechanisms for older CPUs.
+* **Built-in OpenEXR Writer:** A custom, high-speed, multi-threaded implementation of the OpenEXR file format supporting HALF and FLOAT pixel types, with support for both ZIP (16-scanline block) and ZIPS (single scanline block) compression codecs.
+* **EXIF Metadata Preservation:** Automatically extracts and copies critical exposure parameters (aperture, exposure time, ISO speed) from the center exposure file and embeds them into the output OpenEXR headers.
+* **Flexible Execution:** Run in automation/headless batch script mode (CLI) or as an interactive console application (TUI).
 
 ### Compatibility
 
