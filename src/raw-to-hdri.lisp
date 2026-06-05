@@ -272,8 +272,8 @@ Options:
       (expt 2.0f0 (abs ev))
       (/ 1.0f0 (expt 2.0f0 ev))))
 
-(defun stack-images (layers ev-step lo hi center)
-  "Stacks multiple exposure 16-bit integer layers component-wise using sb-simd-avx2 and returns the combined image as a normalized float array."
+(defun stack-images-avx2 (layers ev-step lo hi center)
+  "Vectorized stacking implementation using AVX2 SIMD."
   (declare (type list layers)
            (type single-float ev-step lo hi)
            (type fixnum center)
@@ -289,7 +289,7 @@ Options:
     
     (let* ((norm-factor (sb-simd-avx2:f32.8-broadcast #.(/ 1.0f0 65535.0f0)))
            (mask-vec (sb-simd-avx2:s32.8-broadcast #xFFFF)))
-      ;; 1. Initialize bg with normalized floats from the first layer using SIMD
+      ;; 1. Initialize bg using AVX2 SIMD
       (loop for i from 0 by 8 below simd-limit do
         (let* ((u16-vec (sb-simd-avx2:u16.8-aref first-layer i))
                (s32-vec (sb-simd-avx2:s32.8-and (sb-simd-avx2:s32.8-from-u16.8 u16-vec) mask-vec))
@@ -300,7 +300,7 @@ Options:
       (loop for i from simd-limit below size do
         (setf (aref bg i) (* (coerce (aref first-layer i) 'single-float) #.(/ 1.0f0 65535.0f0)))))
 
-    ;; 2. Blend subsequent foreground layers
+    ;; 2. Blend subsequent layers using AVX2 SIMD
     (let ((ev ev-step)
           (norm-factor (sb-simd-avx2:f32.8-broadcast #.(/ 1.0f0 65535.0f0)))
           (mask-vec (sb-simd-avx2:s32.8-broadcast #xFFFF))
@@ -349,6 +349,56 @@ Options:
       (dotimes (i size)
         (setf (aref bg i) (* (aref bg i) center-factor))))
     bg))
+
+(defun stack-images-scalar (layers ev-step lo hi center)
+  "Pure scalar stacking implementation for hardware lacking AVX2."
+  (declare (type list layers)
+           (type single-float ev-step lo hi)
+           (type fixnum center)
+           (optimize (speed 3) (safety 0) (debug 0)))
+  (let* ((first-layer (first layers))
+         (fgs (rest layers))
+         (size (length first-layer))
+         (bg (make-array size :element-type 'single-float)))
+    (declare (type (simple-array (unsigned-byte 16) (*)) first-layer)
+             (type (simple-array single-float (*)) bg)
+             (type fixnum size))
+    ;; 1. Initialize bg with normalized floats from the first layer
+    (let ((norm #.(/ 1.0f0 65535.0f0)))
+      (declare (type single-float norm))
+      (dotimes (i size)
+        (setf (aref bg i) (* (coerce (aref first-layer i) 'single-float) norm))))
+    ;; 2. Blend subsequent foreground layers
+    (let ((ev ev-step)
+          (norm #.(/ 1.0f0 65535.0f0))
+          (inv-range (/ 1.0f0 (- hi lo))))
+      (declare (type single-float ev norm inv-range))
+      (dolist (fg fgs)
+        (let ((exposure-factor (ev-to-exposure-factor ev))
+              (fg-arr fg))
+          (declare (type single-float exposure-factor)
+                   (type (simple-array (unsigned-byte 16) (*)) fg-arr))
+          (dotimes (i size)
+            (let* ((c-fg (* (coerce (aref fg-arr i) 'single-float) norm))
+                   (c-bg (aref bg i))
+                   (matte (max 0.0f0 (min 1.0f0 (* (- hi c-fg) inv-range)))))
+              (declare (type single-float c-fg c-bg matte))
+              (setf (aref bg i)
+                    (+ (* c-bg (- 1.0f0 matte))
+                       (* c-fg exposure-factor matte))))))
+        (incf ev ev-step)))
+    ;; 3. Adjust global scale based on center exposure
+    (let ((center-factor (expt 2.0f0 (* ev-step (coerce (1- center) 'single-float)))))
+      (declare (type single-float center-factor))
+      (dotimes (i size)
+        (setf (aref bg i) (* (aref bg i) center-factor))))
+    bg))
+
+(defun stack-images (layers ev-step lo hi center)
+  "Stacks multiple exposure 16-bit integer layers component-wise using dynamic CPU dispatch (AVX2 vs. Scalar)."
+  (if (sb-simd-internals:avx2-supported-p)
+      (stack-images-avx2 layers ev-step lo hi center)
+      (stack-images-scalar layers ev-step lo hi center)))
 
 ;;;; -------------------------------------------------------------------------
 ;;;; Directory & File Utilities

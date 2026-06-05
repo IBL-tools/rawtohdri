@@ -43,22 +43,21 @@
   (format t "Testing stack-images...~%")
   (let* ((bg (make-array 3 :element-type '(unsigned-byte 16) :initial-contents '(32768 32768 32768)))
          (fg (make-array 3 :element-type '(unsigned-byte 16) :initial-contents '(49151 49151 49151)))
-         ;; Stacking bg and fg:
-         ;; bg normalized = 32768 / 65535.0 = 0.5000076f0
-         ;; fg normalized = 49151 / 65535.0 = 0.7499962f0
-         ;; ev-step = 3.0f0 -> exposure-factor = 0.125f0
-         ;; lo = 0.7f0, hi = 0.8f0
-         ;; matte = (0.8 - 0.7499962) / 0.1 = 0.500038f0
-         ;; output[i] = bg[i] * (1 - matte) + fg[i] * exposure-factor * matte
-         ;;           = 0.5000076 * 0.499962 + 0.7499962 * 0.125 * 0.500038
-         ;;           = 0.2499848 + 0.0468785 = 0.2968633f0
-         ;; Then global scale factor is applied based on center:
-         ;; center = 2 -> (1- center) = 1 -> center-factor = expt(2, 3.0f0) = 8.0f0
-         ;; final value = 0.2968633 * 8 = 2.374906f0
-         (result (raw-to-hdri::stack-images (list bg fg) 3.0f0 0.7f0 0.8f0 2)))
-    (assert (float-approx-equal (aref result 0) 2.375f0))
-    (assert (float-approx-equal (aref result 1) 2.375f0))
-    (assert (float-approx-equal (aref result 2) 2.375f0)))
+         (result-avx2 (raw-to-hdri::stack-images-avx2 (list bg fg) 3.0f0 0.7f0 0.8f0 2))
+         (result-scalar (raw-to-hdri::stack-images-scalar (list bg fg) 3.0f0 0.7f0 0.8f0 2))
+         (result-dispatch (raw-to-hdri::stack-images (list bg fg) 3.0f0 0.7f0 0.8f0 2)))
+    ;; Assert AVX2 correctness
+    (assert (float-approx-equal (aref result-avx2 0) 2.375f0))
+    (assert (float-approx-equal (aref result-avx2 1) 2.375f0))
+    (assert (float-approx-equal (aref result-avx2 2) 2.375f0))
+    ;; Assert Scalar correctness
+    (assert (float-approx-equal (aref result-scalar 0) 2.375f0))
+    (assert (float-approx-equal (aref result-scalar 1) 2.375f0))
+    (assert (float-approx-equal (aref result-scalar 2) 2.375f0))
+    ;; Assert Dispatch correctness
+    (assert (float-approx-equal (aref result-dispatch 0) 2.375f0))
+    (assert (float-approx-equal (aref result-dispatch 1) 2.375f0))
+    (assert (float-approx-equal (aref result-dispatch 2) 2.375f0)))
   (format t "  stack-images passed.~%"))
 
 (defun run-tests ()
