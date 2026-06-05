@@ -5,13 +5,17 @@
   (ql:quickload :bordeaux-threads :silent t)
   (ql:quickload :salza2 :silent t))
 
-(defpackage :nxsh-simple-exr
+(defpackage :exr
   (:use :cl)
   (:export #:encode-rgb-to-exr
            #:encode-single-channel-to-exr
            #:detect-cores))
 
-(in-package :nxsh-simple-exr)
+(in-package :exr)
+
+(defstruct comp-state
+  (chunks '() :type list)
+  (size 0 :type fixnum))
 
 (defun detect-cores ()
   "Detects logical CPU cores by parsing /proc/cpuinfo.
@@ -106,8 +110,10 @@ unreadable, or yields a zero count."
         (values 0 0 (1- width) (1- height)))))
 
 ;; Process a single scanline block with data window cropping (scanline-by-scanline, channel-by-channel)
-(defun process-block (original-width dw-xmin dw-xmax y-start block-rows rgb-array alpha-array pixel-type u i d)
-  (declare (type fixnum original-width dw-xmin dw-xmax y-start block-rows)
+(defun process-block (compressor state original-width dw-xmin dw-xmax y-start block-rows rgb-array alpha-array pixel-type u i d)
+  (declare (type salza2:deflate-compressor compressor)
+           (type comp-state state)
+           (type fixnum original-width dw-xmin dw-xmax y-start block-rows)
            (type (simple-array single-float (*)) rgb-array)
            (type (or null (simple-array single-float (*))) alpha-array)
            (type keyword pixel-type)
@@ -192,12 +198,24 @@ unreadable, or yields a zero count."
         (setf (aref d idx) diff)))
     
     ;; Zlib Deflation
-    (let ((compressed (salza2:compress-data (subseq d 0 total-uncompressed-bytes) 'salza2:zlib-compressor)))
+    (setf (comp-state-chunks state) '()
+          (comp-state-size state) 0)
+    (salza2:reset compressor)
+    (salza2:compress-octet-vector d compressor :end total-uncompressed-bytes)
+    (salza2:finish-compression compressor)
+    (let* ((size (comp-state-size state))
+           (compressed (make-array size :element-type '(unsigned-byte 8)))
+           (start 0))
+      (dolist (chunk (nreverse (comp-state-chunks state)))
+        (replace compressed chunk :start1 start)
+        (incf start (length chunk)))
       compressed)))
 
-;; Process a single scanline block for a single channel with data window cropping
-(defun process-single-channel-block (original-width dw-xmin dw-xmax y-start block-rows data-array pixel-type u i d)
-  (declare (type fixnum original-width dw-xmin dw-xmax y-start block-rows)
+;;;; Process a single scanline block for a single channel with data window cropping
+(defun process-single-channel-block (compressor state original-width dw-xmin dw-xmax y-start block-rows data-array pixel-type u i d)
+  (declare (type salza2:deflate-compressor compressor)
+           (type comp-state state)
+           (type fixnum original-width dw-xmin dw-xmax y-start block-rows)
            (type (simple-array single-float (*)) data-array)
            (type keyword pixel-type)
            (type (simple-array (unsigned-byte 8) (*)) u i d)
@@ -246,7 +264,20 @@ unreadable, or yields a zero count."
         (setf (aref d idx) diff)))
     
     ;; Deflate
-    (salza2:compress-data (subseq d 0 block-channel-bytes) 'salza2:zlib-compressor)))
+    (setf (comp-state-chunks state) '()
+          (comp-state-size state) 0)
+    (salza2:reset compressor)
+    (let ((clb (salza2:callback compressor)))
+      (declare (ignore clb)))
+    (salza2:compress-octet-vector d compressor :end block-channel-bytes)
+    (salza2:finish-compression compressor)
+    (let* ((size (comp-state-size state))
+           (compressed (make-array size :element-type '(unsigned-byte 8)))
+           (start 0))
+      (dolist (chunk (nreverse (comp-state-chunks state)))
+        (replace compressed chunk :start1 start)
+        (incf start (length chunk)))
+      compressed)))
 
 ;;;; Construct OpenEXR header attributes with explicit bounds
 (defun make-exr-header (width height dw-xmin dw-ymin dw-xmax dw-ymax has-alpha pixel-type compression-type &optional comments metadata)
@@ -501,7 +532,7 @@ unreadable, or yields a zero count."
   (write-byte (ldb (byte 8 16) val) stream)
   (write-byte (ldb (byte 8 24) val) stream))
 
-(defun encode-rgb-to-exr (stream width height rgb-array &key alpha-array (pixel-type :half) (compression :zips) (num-threads (detect-cores)) autocrop data-window comments metadata)
+(defun encode-rgb-to-exr (stream width height rgb-array &key alpha-array (pixel-type :half) (compression :zip) (num-threads (min 8 (detect-cores))) autocrop data-window comments metadata)
   "Encodes a flat 1D array of single-floats representing an RGB (or RGBA) image into an OpenEXR stream.
 
 Arguments:
@@ -559,6 +590,8 @@ This encoder leverages bordeaux-threads for lock-free parallel Zlib compression 
                (type (vector (unsigned-byte 8)) header)
                (type simple-array compressed-payloads))
       
+      ;; Warm up the compressor class in the main thread to prevent lazy CLOS initialization race conditions
+      (make-instance 'salza2:zlib-compressor)
       ;; Spawn worker threads to compress cropped blocks in parallel
       (dotimes (t-idx num-threads)
         (let* ((b-start (* t-idx blocks-per-thread))
@@ -574,12 +607,19 @@ This encoder leverages bordeaux-threads for lock-free parallel Zlib compression 
                               (max-block-bytes (* dw-width bytes-per-val channels-count rows-per-block))
                               (u (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
                               (i (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
-                              (d (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0)))
+                              (d (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
+                              (state (make-comp-state))
+                              (compressor (make-instance 'salza2:zlib-compressor
+                                                         :callback (lambda (buf end)
+                                                                     (declare (type (simple-array (unsigned-byte 8) (*)) buf)
+                                                                              (type fixnum end))
+                                                                     (incf (comp-state-size state) end)
+                                                                     (push (subseq buf 0 end) (comp-state-chunks state))))))
                          (declare (type (simple-array (unsigned-byte 8) (*)) u i d))
                          (loop for b from b-start below b-end do
                            (let* ((y-start (+ dw-ymin (* b rows-per-block)))
                                   (block-rows (min rows-per-block (- (1+ dw-ymax) y-start)))
-                                  (payload (process-block width dw-xmin dw-xmax y-start block-rows rgb-array alpha-array pixel-type u i d)))
+                                  (payload (process-block compressor state width dw-xmin dw-xmax y-start block-rows rgb-array alpha-array pixel-type u i d)))
                              (setf (aref compressed-payloads b) payload)))))))
                   threads))))
       
@@ -615,7 +655,7 @@ This encoder leverages bordeaux-threads for lock-free parallel Zlib compression 
       
       (force-output stream))))
 
-(defun encode-single-channel-to-exr (stream width height data-array channel-name &key (pixel-type :half) (compression :zips) (num-threads (detect-cores)) autocrop data-window comments)
+(defun encode-single-channel-to-exr (stream width height data-array channel-name &key (pixel-type :half) (compression :zip) (num-threads (min 8 (detect-cores))) autocrop data-window comments)
   "Encodes a flat 1D array of single-floats representing a single channel into an OpenEXR stream.
 
 Arguments:
@@ -668,6 +708,8 @@ This encoder leverages bordeaux-threads for parallelized compression blocks conf
                (type (vector (unsigned-byte 8)) header)
                (type simple-array compressed-payloads))
       
+      ;; Warm up the compressor class in the main thread to prevent lazy CLOS initialization race conditions
+      (make-instance 'salza2:zlib-compressor)
       ;; Spawn worker threads to compress blocks in parallel
       (dotimes (t-idx num-threads)
         (let* ((b-start (* t-idx blocks-per-thread))
@@ -682,12 +724,19 @@ This encoder leverages bordeaux-threads for parallelized compression blocks conf
                               (max-block-bytes (* dw-width bytes-per-val rows-per-block))
                               (u (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
                               (i (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
-                              (d (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0)))
+                              (d (make-array max-block-bytes :element-type '(unsigned-byte 8) :initial-element 0))
+                              (state (make-comp-state))
+                              (compressor (make-instance 'salza2:zlib-compressor
+                                                         :callback (lambda (buf end)
+                                                                     (declare (type (simple-array (unsigned-byte 8) (*)) buf)
+                                                                              (type fixnum end))
+                                                                     (incf (comp-state-size state) end)
+                                                                     (push (subseq buf 0 end) (comp-state-chunks state))))))
                          (declare (type (simple-array (unsigned-byte 8) (*)) u i d))
                          (loop for b from b-start below b-end do
                            (let* ((y-start (+ dw-ymin (* b rows-per-block)))
                                   (block-rows (min rows-per-block (- (1+ dw-ymax) y-start)))
-                                  (payload (process-single-channel-block width dw-xmin dw-xmax y-start block-rows data-array pixel-type u i d)))
+                                  (payload (process-single-channel-block compressor state width dw-xmin dw-xmax y-start block-rows data-array pixel-type u i d)))
                              (setf (aref compressed-payloads b) payload)))))))
                   threads))))
       
