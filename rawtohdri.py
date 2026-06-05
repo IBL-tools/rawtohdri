@@ -14,8 +14,7 @@ MAX_WORKERS = 3
 TEMP_DIR = '/tmp/'
 
 # Rotate image amount [0,90,180,270] empty str = camera sensor angle
-ROTATE = '-t 270 '
-# ROTATE = ' '
+ROTATE = ''
 
 ##############################################################################
 ####### END OF USER CONFIGURABLE STUFF #######################################
