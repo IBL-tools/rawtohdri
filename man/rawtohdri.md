@@ -1,12 +1,15 @@
 # rawtohdri(1) - manual page
 
 ## NAME
+
 **rawtohdri** — high-performance parallel camera raw stacker to OpenEXR
 
 ## SYNOPSIS
+
 `rawtohdri <input_dir> [options]`
 
 ## DESCRIPTION
+
 **rawtohdri** takes a bracketed set of camera RAW files, converts them directly to linear light images, and stacks them into high dynamic range (HDR) images saved in OpenEXR format (HALF or FLOAT) with ZIP/ZIPS compression.
 
 The application is designed from the ground up for extreme performance and memory efficiency. By utilizing Common Lisp (via SBCL) coupled with native AVX2 SIMD instructions, it achieves speed levels comparable to or exceeding hand-tuned C/C++ implementations, processing full-resolution RAW exposure brackets into a finished HDR image in under 1.5 seconds.
@@ -16,6 +19,7 @@ Additionally, the tool copies important EXIF metadata—such as ISO, shutter spe
 ## OPTIONS
 
 ### Main Options
+
 * `-x`, `--chunk <int>`  
   Specifies the number of bracketed exposures per stacked HDR image. The input files are sorted alphabetically and grouped into chunks of this size. If the last chunk has fewer files than specified, it is skipped. *(Default: 3)*
 * `-e`, `--ev <float>`  
@@ -48,43 +52,54 @@ Additionally, the tool copies important EXIF metadata—such as ISO, shutter spe
 ## UNIQUE FEATURES & OPTIMIZATIONS
 
 ### 16-bit Integer RAW Ingest
+
 Unlike traditional HDR stackers that upcast RAW data to 32-bit floating-point buffers immediately on ingest, **rawtohdri** keeps the demosaiced data as compact 16-bit unsigned integers (`(unsigned-byte 16)`). This reduces the memory footprint of loaded source images by exactly 50%.
 
 ### Zero-Copy Float Accumulator
+
 To prevent heap-allocation thrashing, the stacking pipeline uses exactly one float buffer for the final output composition. The 16-bit integer pixel components are converted to floats on-the-fly inside the stacking loop.
 
 ### AVX2 SIMD Vectorization
+
 The critical stacking loop is hand-vectorized using AVX2 SIMD instructions (via the Common Lisp `sb-simd` package). This allows the processor to load, normalize, clamp, and blend 8 pixel components in parallel per instruction cycle. AVX2 stacking achieves a 2x speedup (down to ~0.06 seconds per full-resolution chunk) compared to standard scalar or compiler-auto-vectorized loops.
 
 ### Dynamic CPU Dispatch
+
 To maintain maximum compatibility without sacrificing performance, the program checks CPU capabilities at startup using `CPUID` instruction queries. If AVX2 is supported, it executes the vectorized path; on older CPUs, it automatically falls back to a clean scalar loop instead of crashing.
 
 ### Multi-Threaded Custom OpenEXR Writer
+
 To bypass the overhead of heavy C++ OpenEXR libraries, **rawtohdri** features a custom, lightweight, multi-threaded OpenEXR writer written in pure Common Lisp. It parallelizes Zlib compression across up to 8 threads using ZIP block compression (16-scanline blocks).
 
 ## EXAMPLES
 
 Process all RAW files in `/path/to/shots/` in groups of 3 (using default options) and save EXRs in the same directory:
+
 ```bash
 rawtohdri /path/to/shots/
 ```
 
 Process groups of 5 exposures with 2.0 EV spacing, write outputs to a nested `exr/` directory, use 32-bit FLOAT precision, and print detailed execution times:
+
 ```bash
 rawtohdri /path/to/shots/ -x 5 -e 2.0 -n --float -v
 ```
 
 Limit RAW decoding to 2 threads to conserve RAM on a resource-constrained system, and save outputs to `/output/hdris/`:
+
 ```bash
 rawtohdri /path/to/shots/ -t 2 -d /output/hdris/
 ```
 
 ## EXIT STATUS
+
 * **0** — Success. All bracketed sets were grouped and processed successfully.
 * **1** — Failure. Caused by invalid command line arguments, missing/invalid input directories, size mismatch within bracketed sets, or internal LibRaw decoding errors.
 
 ## AUTHORS
+
 Written and maintained by Aaron Estrada.
 
 ## COPYRIGHT
+
 This project is licensed under the MIT License.
