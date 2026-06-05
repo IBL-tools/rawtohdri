@@ -1,0 +1,96 @@
+.TH RAWTOHDRI 1 "June 2026" "v1.0.0" "rawtohdri manual"
+.SH NAME
+rawtohdri \- high-performance parallel camera raw stacker to OpenEXR
+.SH SYNOPSIS
+.B rawtohdri
+.I <input_dir>
+[\fBoptions\fR]
+.SH DESCRIPTION
+.B rawtohdri
+takes a bracketed set of camera RAW files, converts them directly to linear light images, and stacks them into high dynamic range (HDR) images saved in OpenEXR format (HALF or FLOAT) with ZIP/ZIPS compression.
+.PP
+The application is designed from the ground up for extreme performance and memory efficiency. By utilizing Common Lisp (via SBCL) coupled with native AVX2 SIMD instructions, it achieves speed levels comparable to or exceeding hand-tuned C/C++ implementations, processing full-resolution RAW exposure brackets into a finished HDR image in under 1.5 seconds.
+.PP
+Additionally, the tool copies important EXIF metadata\(emsuch as ISO, shutter speed, aperture, focal length, and capture date\(emfrom the designated "center" RAW file and embeds it directly into the output OpenEXR header.
+.SH OPTIONS
+.SS Main Options
+.TP
+.BI \-x ", " \-\-chunk " <int>"
+Specifies the number of bracketed exposures per stacked HDR image. The input files are sorted alphabetically and grouped into chunks of this size. If the last chunk has fewer files than specified, it is skipped. (Default: 3)
+.TP
+.BI \-e ", " \-\-ev " <float>"
+The exposure value (EV) spacing step between consecutive shots in the bracket (e.g., 2.0 or 3.0). (Default: 3.0)
+.TP
+.BI \-c ", " \-\-center " <int>"
+The 1-based index of the "center" exposure within the bracket. The metadata (shutter, aperture, ISO, etc.) from this image is copied to the final OpenEXR output. (Default: 2)
+.TP
+.B \-n ", " \-\-nest
+If specified, output files are written to a subdirectory named \fBexr/\fR created directly under the input directory.
+.TP
+.BI \-o ", " \-\-output\-basename " <str>"
+The file prefix for generated OpenEXR output images (e.g., "capture_"). (Default: "hdrout_")
+.TP
+.BI \-d ", " \-\-output\-dir " <path>"
+Specifies an alternate directory where the generated OpenEXR images will be written. If it doesn't exist, it is created. (Default: same as input directory)
+.TP
+.BI \-l ", " \-\-lo " <float>"
+Luma threshold representing the lower boundary of the exposure blending range. Pixels below this threshold in a brighter exposure are blended. (Default: 0.7)
+.TP
+.BI \-H ", " \-\-hi " <float>"
+Luma threshold representing the upper boundary of the exposure blending range. Pixels above this threshold in a darker exposure are blended. (Default: 0.8)
+.TP
+.B \-v ", " \-\-verbose
+Enables verbose output, printing details about demosaicing speed, stacking time, and EXR compression timing.
+.TP
+.BI \-\-rotate " <int>"
+Specifies rotation angle in degrees: 0, 90, 180, or 270. (Default: 0, native sensor orientation)
+.TP
+.B \-\-float
+Enables saving the OpenEXR files with 32-bit single-precision FLOAT data instead of the default 16-bit HALF precision.
+.TP
+.B \-\-zips
+Instructs the OpenEXR writer to use ZIPS (single-scanline block) compression instead of the default ZIP (16-scanline block) compression.
+.TP
+.BI \-t ", " \-\-max\-decode\-threads " <int>"
+Specifies the maximum number of parallel threads used to decode and demosaic RAW images. Set to \fB0\fR for unlimited (parallelizes decoding across all cores). Set to \fB1\fR to run sequentially, which drastically reduces memory consumption under RAM pressure. (Default: 0)
+.TP
+.B \-h ", " \-\-help
+Displays the help text and exits.
+.SH UNIQUE FEATURES & OPTIMIZATIONS
+.SS 16-bit Integer RAW Ingest
+Unlike traditional HDR stackers that upcast RAW data to 32-bit floating-point buffers immediately on ingest, \fBrawtohdri\fR keeps the demosaiced data as compact 16-bit unsigned integers (`(unsigned-byte 16)`). This reduces the memory footprint of loaded source images by exactly 50%.
+.SS Zero-Copy Float Accumulator
+To prevent heap-allocation thrashing, the stacking pipeline uses exactly one float buffer for the final output composition. The 16-bit integer pixel components are converted to floats on-the-fly inside the stacking loop.
+.SS AVX2 SIMD Vectorization
+The critical stacking loop is hand-vectorized using AVX2 SIMD instructions (via the Common Lisp `sb-simd` package). This allows the processor to load, normalize, clamp, and blend 8 pixel components in parallel per instruction cycle. AVX2 stacking achieves a 2x speedup (down to ~0.06 seconds per full-resolution chunk) compared to standard scalar or compiler-auto-vectorized loops.
+.SS Dynamic CPU Dispatch
+To maintain maximum compatibility without sacrificing performance, the program checks CPU capabilities at startup using `CPUID` instruction queries. If AVX2 is supported, it executes the vectorized path; on older CPUs, it automatically falls back to a clean scalar loop instead of crashing.
+.SS Multi-Threaded Custom OpenEXR Writer
+To bypass the overhead of heavy C++ OpenEXR libraries, \fBrawtohdri\fR features a custom, lightweight, multi-threaded OpenEXR writer written in pure Common Lisp. It parallelizes Zlib compression across up to 8 threads using ZIP block compression (16-scanline blocks).
+.SH EXAMPLES
+.PP
+Process all RAW files in \fB/path/to/shots/\fR in groups of 3 (using default options) and save EXRs in the same directory:
+.RS
+.B rawtohdri /path/to/shots/
+.RE
+.PP
+Process groups of 5 exposures with 2.0 EV spacing, write outputs to a nested \fBexr/\fR directory, use 32-bit FLOAT precision, and print detailed execution times:
+.RS
+.B rawtohdri /path/to/shots/ -x 5 -e 2.0 -n --float -v
+.RE
+.PP
+Limit RAW decoding to 2 threads to conserve RAM on a resource-constrained system, and save outputs to \fB/output/hdris/\fR:
+.RS
+.B rawtohdri /path/to/shots/ -t 2 -d /output/hdris/
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success. All bracketed sets were grouped and processed successfully.
+.TP
+.B 1
+Failure. Caused by invalid command line arguments, missing/invalid input directories, size mismatch within bracketed sets, or internal LibRaw decoding errors.
+.SH AUTHORS
+Written and maintained by Aaron Estrada.
+.SH COPYRIGHT
+This project is licensed under the MIT License.
