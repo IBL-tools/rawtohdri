@@ -1,24 +1,27 @@
 # rawtohdri
 
-## After an over 15 year hiatus, rawtohdri has been revived, now as a full-blown, multi-threded and compiled progam built in SBCL Common Lisp! 🚀
+## After an over 15 year hiatus, rawtohdri has been revived, now as a multi-threded and compiled progam built in SBCL Common Lisp! 🚀
 
 ### Description
 
 rawtohdri takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal external dependencies requiring only LibRaw, which most distros include in their package systems. (All Lisp dependencies are available as Quicklisp libraries, so that part is easy). rawtohdri's main clain to fame are it's speed and it's efficiency. It features thread-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR. It includes a simple multi-threaded pure Lisp implementation of the EXR format. Why? Bacause I only need part of the standard and the full library is huge, so I wrote my own. It only suports ZIP/ZIPS codec, RGBA, HALF and FLOAT only and does support the data window and display window. But in this particular case the data window is never used. The EXR saver does what it needs to do and it's BLAZING FAST with essentially no bloat.
 
-rawtohdri can process any RAW format supported by LibRaw and it will write any output format you want... as long as it's OpenEXR. 🤣
+rawtohdri can process any RAW format supported by LibRaw and it will write to any output format you want... as long as it's OpenEXR. 🤣
 
-This version of rawtohdri is realeased under the MIT license. The old python version is realeased under the GPL license and is still included in the repo for historical purposes.
+This version of rawtohdri is realeased under the **MIT** license. The old python version is realeased under the **GPL** license and is still included in the repo for historical purposes. (it includes a pure Python class for reading 16 bit PPM files, which might be interesting for academic purposes.)
 
-(it includes a pure Python class for reading 16 bit PPM files, which might be interesting for academic purposes.)
+### Compatibility
+
+rawtohdri should run great on any platform where SBCL and LibRaw can be installed. However, it's only been tested on **Linux** with SBCL 2.6.4-1 and LibRaw 0.25.0
 
 ### Dependencies
 
 rawtohdri depends on the following external libraries:
 
-* SBCL Common Lisp: [https://www.sbcl.org](https://www.sbcl.org) (Probably available via in your distros package manager)
-* Qlot: [https://github.com/fukamachi/qlot](https://github.com/fukamachi/qlot) (available as a quicklisp)
-* libraw.so.25.0.0: [https://www.libraw.org](https://www.libraw.org) (Probably available via in your distros manager)
+* **SBCL Common Lisp:** [https://www.sbcl.org](https://www.sbcl.org) (Probably available via in your distros package manager)
+* **Qlot:** [https://github.com/fukamachi/qlot](https://github.com/fukamachi/qlot) (available as a quicklisp)
+* **GNU make:** Almost certainly available via your distros package manager.
+* **libraw.so.25.0.0:** [https://www.libraw.org](https://www.libraw.org) (Probably available via in your distros manager)
 
 ### Build & Install
 
@@ -28,7 +31,7 @@ The easiest way to build rawtohdri is to use Qlot to manage quicklisp to get dep
 qlot install
 ```
 
-This will install the dependencies in the project `.qlot/` directory.  
+This will install the required Lisp dependencies in the project `.qlot/` directory.  
 
 You can then build the binary with `make`:
 
