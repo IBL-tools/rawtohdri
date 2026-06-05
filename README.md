@@ -1,39 +1,51 @@
 # rawtohdri
 
-## With the closing of Google Code, this is the new official home of rawtohdri. 
+## After an over 15 year hiatus, rawtohdri has been revived, now as a full-blown, multi-threded and compiled progam built in SBCL Common Lisp
 
-### Description:
+### Description
 
-rawtohdri is a Python based program which takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal dependencies, requiring only dcraw, NumPy and the LibOpenEXR bindings for python. rawtohdri's main features are process-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR.
+rawtohdri takes a bracketed set of camera raw files, converts them directly to linear light images and stacks them into an HDR image saved in OpenEXR HALF format. It has minimal external dependencies requiring only LibRaw, which most distros include in their package systems. (All Lisp dependencies are available as Quicklisp libraries, so that part is easy). rawtohdri's main clain to fame are it's speed and it's efficiency. It features thread-parallel conversion of raw files and the ability to convert HDRIs one scanline at a time, the latter making it very memory efficient in spite of working at full floating point precision during stacking. It also copies the important bits of EXIF metadata like exposure and ISO from the raw to the output EXR. It includes a simple multi-threaded pure Lisp implementation of the EXR format. Why? Bacause I only need part of the standard and the full library is huge, so I wrote my own. It only suports ZIP/ZIPS codec, RGBA, HALF and FLOAT only and does support the data window and display window. But in this particular case the data window is never used. The EXR saver does what it needs to do and it's BLAZING FAST with essentially no bloat.
 
-rawtohdri can process any raw format supported by dcraw.
+rawtohdri can process any RAW format supported by LibRaw and it will write any output format you want... as long as it's OpenEXR. 🤣
 
-While perfectly usable in its current form (It meets my personal needs just fine), the pre-1.0 version is really just a proof-of-concept/prototype. I did it as an exercise to learn Python. There's plenty of room for improvement in speed. The next phase of development will focus on speed improvements.
+This version of rawtohdri is realeased under the MIT license. The old python version is realeased under the GPL license and is still included in the repo for historical purposes.
 
-The program includes a Python class for reading 16 bit PPM files, which might be interesting for academic purposes.
+(it includes a pure Python class for reading 16 bit PPM files, which might be interesting for academic purposes.)
 
-### Getting Started:
+### Dependencies
+
+rawtohdri depends on the following external libraries:
+
+* SBCL Common Lisp: [https://www.sbcl.org](https://www.sbcl.org) (Probably available via in your distros package manager)
+* Qlot: [https://github.com/fukamachi/qlot](https://github.com/fukamachi/qlot) (available as a quicklisp)
+* libraw.so.25.0.0: [https://www.libraw.org](https://www.libraw.org) (Probably available via in your distros manager)
+
+### Build & Install
+
+The easiest way to build rawtohdri is to use Qlot to manage quicklisp to get dependencies:
+
+```bash
+qlot install
+```
+
+This will install the dependencies in the project `.qlot/` directory.  
+
+You can then build the binary with `make`:
+
+```bash
+make all
+```
+
+It's that easy.
+
+### Getting Started
 
 Here is the help text from rawtohdri: [Help](https://github.com/IBL-tools/raw-to-hdri/wiki/cliHelp)
 
-rawtohdri is a plain text Python script. Instillation is pretty straight forward on Linux and beyond Python 2.7 it has only three dependencies...
+### Details
 
-* [dcraw](http://www.cybercom.net/~dcoffin/dcraw/)
-* [NumPy 1.6](http://numpy.scipy.org/)
-* [OpenEXR bindings for Python](http://excamera.com/sphinx/articles-openexr.html)
+Common Lisp you say? Isn't that a dead language? Well no, it's not. You really aught to give it a try. All the convieniences of Python/Ruby/Perl but all the speed and memory safety of Go. C++ level speed is absolutely achievable if you do your part. It can even do SIMD. It really is an amazing language (the SBCL implementation in particular) The package system is extremely mature and easy to use. (similar to Go and Cargo in Rust). On top of that, you have a world class, completely unparalleled REPL. (Don't even get me started on the macros...🤯) I wish I had discovered this language years sooner. This port of rawtohdri to a compiled language would have been done years ago if I had.
 
-You will need to install these dependencies on your own. (I will write a guide when I have the time)
+Here is a description of the algorithm used by rawtohdri: [Algorithm](https://github.com/IBL-tools/raw-to-hdri/wiki/rawtohdri-stacking-algorithm)
 
-### Help Wanted:
-
-We are looking for testers and collaborators. Do you have a camera that shoots raw? I'm interested to hear how rawtohdri works for you. Perhaps you can provide some bracketed raw files myself and others can use for testing.
-
-Any code review I can get is welcome. Patches and submissions are welcome also. If you are a Python module hacker interested in helping out, let's talk!
-
-If you are interested in packaging rawtohdri for your favorite distro, please contact me.
-
-### Details:
-
-Here is a description of the algorithm used by rawtohdri: [Algorithm](https://github.com/IBL-tools/rawtohdri/wiki/rawtohdri-stacking-algorithm)
-
-At present, much of the heavy lifting (the actual HDRI stacking) in rawtohdri is done in pure Python and Numpy. As a result, conversion is definitely CPU bound by the Python interpreter. The algorithms in use are so simple (trivial really), I would expect a program like this to be I/O bound rather than CPU bound. Moving forward I plan to focus on improving the speed of rawtohdri. I already see some low hanging fruit in terms of possible speed improvements. Better implemented multiprocessing alone would lead to perhaps a 4x speed improvement on 4 core systems. Basic static typing optimizations in Cython would probably also lead to speed improvements without a lot of hassle.
+The heavy lifting (the actual HDRI stacking) in rawtohdri continues to be done in the host language which is no longer a bottleneck as it was in the old Python + Numpy implementation. As a result, the stacking is now so fast as to be memory bound rather than CPU bound. The algorithms in use for compositing are so simple (trivial really), they were IO bound, even in the old Python version. It's probably still the case but... less so. The custom OpenEXR writer in rawtohdri is multi-threaded and extremely fast. The RAW file reading and demosaicing is done by LibRaw but rawtohdri can read them buffer parallelly, one thread per RAW file, which is a big win the more RAW images you have to process for a single HDRI. Depending on your hardware and how many RAW files you have in each bracketed set, you can expect render times from 1 second to 5-6 seconds to process full resolution HDRI. It's a MASSIVE speed improvement over the Python version. But do keep in mind, to achieve this speed, the new version of rawtohdri loads every image it's going to process into memory. (up-casting it to 32 bit floating point RGB data). It uses a zero copy stratagy and recycles the buffer of the first image as the target for the stacked HDRI, saving some RAM there. The OpenEXR writer uses up to 8 threads for compression (more is typically not faster unless you have MONSTER caches on your CPU, which you won't at home) and It also reuses the shared buffer when it does the final write to OpenEXR. But do keep in mind, even with the agressive buffer sharing optimizations, RAM usage will be proportional to the resolution and number of images being stacked. Peak RAM may be quite high due to the parallel RAW decoding process, even if the stacking itself is memory efficient. However, you ***can*** control it with the -t argument in the CLI and force less parallelism if you are tight on RAM.
