@@ -5,7 +5,7 @@
   :author "Aaron Estrada"
   :license "MIT"
   :version "1.0.0"
-  :depends-on (#:cffi #:bordeaux-threads #:salza2)
+  :depends-on (#:cffi #:bordeaux-threads #:salza2 #:sb-simd)
   :serial t
   :components ((:module "src"
                 :components

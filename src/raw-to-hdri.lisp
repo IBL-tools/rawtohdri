@@ -2,7 +2,7 @@
 ;;;; Part of the rawtohdri package.
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (ql:quickload '(:cffi :bordeaux-threads :uiop) :silent t))
+  (ql:quickload '(:cffi :bordeaux-threads :uiop :sb-simd) :silent t))
 
 (defpackage :raw-to-hdri
   (:use :cl)
@@ -273,7 +273,7 @@ Options:
       (/ 1.0f0 (expt 2.0f0 ev))))
 
 (defun stack-images (layers ev-step lo hi center)
-  "Stacks multiple exposure 16-bit integer layers component-wise and returns the combined image as a normalized float array."
+  "Stacks multiple exposure 16-bit integer layers component-wise using sb-simd-avx2 and returns the combined image as a normalized float array."
   (declare (type list layers)
            (type single-float ev-step lo hi)
            (type fixnum center)
@@ -281,35 +281,69 @@ Options:
   (let* ((first-layer (first layers))
          (fgs (rest layers))
          (size (length first-layer))
-         (bg (make-array size :element-type 'single-float)))
+         (bg (make-array size :element-type 'single-float))
+         (simd-limit (* (floor size 8) 8)))
     (declare (type (simple-array (unsigned-byte 16) (*)) first-layer)
              (type (simple-array single-float (*)) bg)
-             (type fixnum size))
-    ;; Initialize bg with normalized floats from the first layer
-    (let ((norm #.(/ 1.0f0 65535.0f0)))
-      (declare (type single-float norm))
-      (dotimes (i size)
-        (setf (aref bg i) (* (coerce (aref first-layer i) 'single-float) norm))))
-    ;; Blend subsequent foreground layers
+             (type fixnum size simd-limit))
+    
+    (let* ((norm-factor (sb-simd-avx2:f32.8-broadcast #.(/ 1.0f0 65535.0f0)))
+           (mask-vec (sb-simd-avx2:s32.8-broadcast #xFFFF)))
+      ;; 1. Initialize bg with normalized floats from the first layer using SIMD
+      (loop for i from 0 by 8 below simd-limit do
+        (let* ((u16-vec (sb-simd-avx2:u16.8-aref first-layer i))
+               (s32-vec (sb-simd-avx2:s32.8-and (sb-simd-avx2:s32.8-from-u16.8 u16-vec) mask-vec))
+               (f32-vec (sb-simd-avx2:f32.8-from-s32.8 s32-vec))
+               (norm-vec (sb-simd-avx2:f32.8* f32-vec norm-factor)))
+          (setf (sb-simd-avx2:f32.8-aref bg i) norm-vec)))
+      ;; Scalar fallback for init
+      (loop for i from simd-limit below size do
+        (setf (aref bg i) (* (coerce (aref first-layer i) 'single-float) #.(/ 1.0f0 65535.0f0)))))
+
+    ;; 2. Blend subsequent foreground layers
     (let ((ev ev-step)
-          (norm #.(/ 1.0f0 65535.0f0))
-          (inv-range (/ 1.0f0 (- hi lo))))
-      (declare (type single-float ev norm inv-range))
+          (norm-factor (sb-simd-avx2:f32.8-broadcast #.(/ 1.0f0 65535.0f0)))
+          (mask-vec (sb-simd-avx2:s32.8-broadcast #xFFFF))
+          (hi-vec (sb-simd-avx2:f32.8-broadcast hi))
+          (inv-range-vec (sb-simd-avx2:f32.8-broadcast (/ 1.0f0 (- hi lo))))
+          (zero-vec (sb-simd-avx2:f32.8-broadcast 0.0f0))
+          (one-vec (sb-simd-avx2:f32.8-broadcast 1.0f0)))
       (dolist (fg fgs)
-        (let ((exposure-factor (ev-to-exposure-factor ev))
-              (fg-arr fg))
+        (let* ((exposure-factor (ev-to-exposure-factor ev))
+               (ev-factor-vec (sb-simd-avx2:f32.8-broadcast exposure-factor))
+               (fg-arr fg))
           (declare (type single-float exposure-factor)
                    (type (simple-array (unsigned-byte 16) (*)) fg-arr))
-          (dotimes (i size)
-            (let* ((c-fg (* (coerce (aref fg-arr i) 'single-float) norm))
-                   (c-bg (aref bg i))
-                   (matte (max 0.0f0 (min 1.0f0 (* (- hi c-fg) inv-range)))))
-              (declare (type single-float c-fg c-bg matte))
-              (setf (aref bg i)
-                    (+ (* c-bg (- 1.0f0 matte))
-                       (* c-fg exposure-factor matte))))))
+          ;; SIMD blend loop
+          (loop for i from 0 by 8 below simd-limit do
+            (let* ((u16-fg (sb-simd-avx2:u16.8-aref fg-arr i))
+                   (s32-fg (sb-simd-avx2:s32.8-and (sb-simd-avx2:s32.8-from-u16.8 u16-fg) mask-vec))
+                   (c-fg (sb-simd-avx2:f32.8* (sb-simd-avx2:f32.8-from-s32.8 s32-fg) norm-factor))
+                   (c-bg (sb-simd-avx2:f32.8-aref bg i))
+                   ;; Matte computation
+                   (val (sb-simd-avx2:f32.8* (sb-simd-avx2:f32.8- hi-vec c-fg) inv-range-vec))
+                   (matte (sb-simd-avx2:f32.8-max zero-vec (sb-simd-avx2:f32.8-min one-vec val)))
+                   ;; Blend
+                   (one-minus-matte (sb-simd-avx2:f32.8- one-vec matte))
+                   (bg-part (sb-simd-avx2:f32.8* c-bg one-minus-matte))
+                   (fg-part (sb-simd-avx2:f32.8* c-fg (sb-simd-avx2:f32.8* ev-factor-vec matte)))
+                   (res (sb-simd-avx2:f32.8+ bg-part fg-part)))
+              (setf (sb-simd-avx2:f32.8-aref bg i) res)))
+          ;; Scalar fallback for blend
+          (let ((norm #.(/ 1.0f0 65535.0f0))
+                (inv-range (/ 1.0f0 (- hi lo))))
+            (declare (type single-float norm inv-range))
+            (loop for i from simd-limit below size do
+              (let* ((c-fg (* (coerce (aref fg-arr i) 'single-float) norm))
+                     (c-bg (aref bg i))
+                     (matte (max 0.0f0 (min 1.0f0 (* (- hi c-fg) inv-range)))))
+                (declare (type single-float c-fg c-bg matte))
+                (setf (aref bg i)
+                      (+ (* c-bg (- 1.0f0 matte))
+                         (* c-fg exposure-factor matte)))))))
         (incf ev ev-step)))
-    ;; Adjust global scale based on center exposure
+
+    ;; 3. Adjust global scale based on center exposure
     (let ((center-factor (expt 2.0f0 (* ev-step (coerce (1- center) 'single-float)))))
       (declare (type single-float center-factor))
       (dotimes (i size)
