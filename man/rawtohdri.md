@@ -1,4 +1,4 @@
-# rawtohdri(1) \(em rawtohdri Manual
+# rawtohdri(1) - manual page
 
 ## NAME
 **rawtohdri** — high-performance parallel camera raw stacker to OpenEXR
