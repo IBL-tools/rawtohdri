@@ -45,7 +45,7 @@ It's that easy.
 
 ### Getting Started
 
-Here is the help text from rawtohdri: [Help](https://github.com/IBL-tools/raw-to-hdri/wiki/cliHelp)
+Here is the man page for rawtohdri in markdown format: [Help](https://github.com/IBL-tools/rawtohdri/wiki/manpage)
 
 ### Details
 
