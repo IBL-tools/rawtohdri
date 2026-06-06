@@ -3,6 +3,61 @@
 
 (in-package :tuition)
 
+(cffi:defcstruct winsize
+  (ws-row :unsigned-short)
+  (ws-col :unsigned-short)
+  (ws-xpixel :unsigned-short)
+  (ws-ypixel :unsigned-short))
+
+(cffi:defcfun ("ioctl" c-ioctl) :int
+  (fd :int)
+  (request :unsigned-long)
+  (argp :pointer))
+
+(defun get-terminal-size-via-ioctl ()
+  (cffi:with-foreign-object (ws '(:struct winsize))
+    (let ((fd (handler-case (get-tty-fd) (error () nil))))
+      (cond
+        ((and fd (>= fd 0) (zerop (c-ioctl fd #x5413 ws)))
+         (cons (cffi:foreign-slot-value ws '(:struct winsize) 'ws-col)
+               (cffi:foreign-slot-value ws '(:struct winsize) 'ws-row)))
+        ((zerop (c-ioctl 1 #x5413 ws))
+         (cons (cffi:foreign-slot-value ws '(:struct winsize) 'ws-col)
+               (cffi:foreign-slot-value ws '(:struct winsize) 'ws-row)))
+        ((zerop (c-ioctl 0 #x5413 ws))
+         (cons (cffi:foreign-slot-value ws '(:struct winsize) 'ws-col)
+               (cffi:foreign-slot-value ws '(:struct winsize) 'ws-row)))
+        (t
+         (cons 80 24))))))
+
+#+sbcl
+(sb-ext:without-package-locks
+  (defun get-terminal-size ()
+    "Get the current terminal size as (width . height)."
+    #+win32
+    (handler-case
+        (win32-get-terminal-size)
+      (error ()
+        (cons 80 24))) ; default fallback
+    #+unix
+    (handler-case
+        (let ((size (get-terminal-size-via-ioctl)))
+          (if (and size (not (equal size '(80 . 24))))
+              size
+              ;; Fallback to uiop:run-program if ioctl returned fallback (80 . 24)
+              (let ((output (uiop:run-program '("sh" "-c" "stty size < /dev/tty")
+                                             :output :string
+                                             :error-output nil)))
+                (let ((parts (uiop:split-string output)))
+                  (if (= 2 (length parts))
+                      (cons (parse-integer (second parts))
+                            (parse-integer (first parts)))
+                      (cons 80 24))))))
+      (error ()
+        (cons 80 24))) ; default fallback
+    #-(or win32 unix)
+    (cons 80 24)))
+
 ;; Patch cl-tuition's run function to wrap make-thread inside signal handlers with sb-sys:with-interrupts.
 ;; This prevents "poll(2) without a timeout while interrupts are disabled" warnings and locks on window resizing.
 #+sbcl
@@ -44,15 +99,15 @@ Terminal modes are applied declaratively from the first view-state render."
                  sb-posix:sigwinch
                  (lambda (signal code scp)
                    (declare (ignore signal code scp))
-                   (unless *exec-suspended*
-                     (let* ((size (get-terminal-size))
-                            (width (car size))
-                            (height (cdr size)))
-                       ;; Update renderer dimensions (slot writes are safe)
-                       (setf (renderer-width (program-renderer program)) width
-                             (renderer-height (program-renderer program)) height)
-                       ;; Defer channel send to a new thread
-                       (sb-sys:with-interrupts
+                   (sb-sys:with-interrupts
+                     (unless *exec-suspended*
+                       (let* ((size (get-terminal-size))
+                              (width (car size))
+                              (height (cdr size)))
+                         ;; Update renderer dimensions (slot writes are safe)
+                         (setf (renderer-width (program-renderer program)) width
+                               (renderer-height (program-renderer program)) height)
+                         ;; Defer channel send to a new thread
                          (bt:make-thread
                           (lambda ()
                             (send program (make-window-size-msg :width width :height height)))
@@ -80,11 +135,11 @@ Terminal modes are applied declaratively from the first view-state render."
                  sb-posix:sigcont
                  (lambda (signal code scp)
                    (declare (ignore signal code scp))
-                   (when (program-restore-fn program)
-                     (resume-terminal (program-restore-fn program))
-                     (setf (program-restore-fn program) nil))
-                   ;; Defer channel send to a new thread
                    (sb-sys:with-interrupts
+                     (when (program-restore-fn program)
+                       (resume-terminal (program-restore-fn program))
+                       (setf (program-restore-fn program) nil))
+                     ;; Defer channel send to a new thread
                      (bt:make-thread
                       (lambda ()
                         (send program (make-resume-msg)))
