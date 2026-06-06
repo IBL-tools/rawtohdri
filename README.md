@@ -1,6 +1,6 @@
-# rawtohdri
-
 <img align="right" src="https://visitor-badge.laobi.icu/badge?page_id=rawtohdri.visitors"/>
+
+# rawtohdri
 
 ## After an over 15 year hiatus, rawtohdri has been revived, now as a multi-threded and compiled progam built in SBCL Common Lisp! 🚀
 
