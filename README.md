@@ -14,7 +14,7 @@ This version of rawtohdri is realeased under the **MIT** license. The old python
 
 ### Features
 
-* **Dynamic TUI (Terminal User Interface):** Interactive, keyboard-and-mouse-driven file and directory browser to navigate your filesystem, dynamically queue multiple raw bracket directories, and track real-time progress (per-directory and overall progress bars) with inline status logs.
+* **Dynamic TUI (Terminal User Interface):** Interactive, keyboard-and-mouse-driven file and directory browser to navigate your filesystem, dynamically queue multiple raw bracket directories, and track real-time progress (per-directory and overall progress bars) with inline status logs. [screenshots](https://github.com/IBL-tools/rawtohdri/wiki/screenshots)
 * **Rapid-Fire Stacking Engine:** Thread-parallel demosaicing of RAW files (one thread per RAW file in the bracket) and ultra-fast, zero-copy floating-point HDRI assembly.
 * **Aggressive Memory Optimization:** Demosaiced source images are loaded as 16-bit integer RGB buffers rather than floats, halving raw memory requirements. Stacking accumulates directly into a single target HDRI float buffer on-the-fly, preventing redundant memory allocations.
 * **AVX2 SIMD Acceleration:** Dynamic compiler-optimized vectorization (via `sb-simd`) processes 8 floating-point components per instruction cycle. Cuts the main stacking loop execution time in half with safe fallback mechanisms for older CPUs.
