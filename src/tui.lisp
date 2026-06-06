@@ -58,6 +58,52 @@
     #-(or win32 unix)
     (cons 80 24)))
 
+#+sbcl
+(sb-ext:without-package-locks
+  (defmethod render ((r renderer) view)
+    "Render VIEW to the terminal using cell-based diffing.
+VIEW may be a string or a view-state object."
+    (let* ((content (if (typep view 'view-state)
+                        (view-state-content view)
+                        view))
+           (stream (output-stream r))
+           (w (renderer-width r))
+           (h (renderer-height r)))
+      ;; Handle view-state terminal transitions
+      (when (typep view 'view-state)
+        (apply-terminal-transitions r (last-view-state r) view stream)
+        (setf (last-view-state r) view))
+      ;; Parse content into cell buffer
+      (let ((new-buf (parse-styled-string (or content "") w h))
+            (old-buf (last-buffer r)))
+        ;; Check for terminal resize. If resized, clear screen and force full redraw.
+        (when (and old-buf
+                   (or (/= w (screen-buffer-width old-buf))
+                       (/= h (screen-buffer-height old-buf))))
+          (clear-screen stream)
+          (setf old-buf nil))
+        ;; Synchronized output begin
+        (write-syncd-begin stream)
+        ;; Home cursor so render-diff's assumed (0,0) start is correct
+        (format stream "~C[H" #\Escape)
+        ;; Diff render against previous buffer
+        (render-diff old-buf new-buf stream)
+        ;; Synchronized output end
+        (write-syncd-end stream)
+        ;; Handle cursor positioning from view-state
+        (when (typep view 'view-state)
+          (let ((cursor (view-state-cursor view)))
+            (if cursor
+                (progn
+                  (format stream "~C[~D;~DH" #\Escape
+                          (1+ (cursor-y cursor))
+                          (1+ (cursor-x cursor)))
+                  (format stream "~C[?25h" #\Escape)) ; show cursor
+                (format stream "~C[?25l" #\Escape))))  ; hide cursor
+        (force-output stream)
+        ;; Swap buffers
+        (setf (last-buffer r) new-buf)))))
+
 ;; Patch cl-tuition's run function to wrap make-thread inside signal handlers with sb-sys:with-interrupts.
 ;; This prevents "poll(2) without a timeout while interrupts are disabled" warnings and locks on window resizing.
 #+sbcl
