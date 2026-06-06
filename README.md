@@ -39,21 +39,24 @@ rawtohdri depends on the following external libraries:
 
 ### Build & Install
 
-The easiest way to build rawtohdri is to use Qlot to manage quicklisp to get dependencies:
+Get `sbcl`, `qlot` and `quicklisp` installed (99% likelyhood they are available in your distros package manager).
+
+Clone the repo:
 
 ```bash
-qlot install
+git clone https://github.com/IBL-tools/rawtohdri.git
+cd rawtohdri
 ```
 
-This will install the required Lisp dependencies in the project `.qlot/` directory.  
+The makefile will call `qlot install` for you if you don't have the dependencies you need already downloaded. At this point (assuming you have qlot) all that is reaquired is to run `make all` to download all the Lisp dependencies and build the binary.
 
-You can then build the binary with `make`:
+Simply do `make all`:
 
 ```bash
 make all
 ```
 
-It's that easy.
+Who said Common Lisp was hard?
 
 ### Getting Started
 
