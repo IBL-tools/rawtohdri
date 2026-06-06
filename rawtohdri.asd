@@ -4,7 +4,7 @@
   :description "Pure in-memory parallel camera raw stacker to OpenEXR"
   :author "Aaron Estrada"
   :license "MIT"
-  :version "1.1.0"
+  :version "1.1.1"
   :depends-on (#:cffi #:bordeaux-threads #:salza2 #:sb-simd #:tuition)
   :serial t
   :components ((:module "src"
