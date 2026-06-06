@@ -1,6 +1,178 @@
 ;;;; src/tui.lisp - cl-tuition terminal user interface for rawtohdri
 ;;;; Part of the rawtohdri package.
 
+(in-package :tuition)
+
+;; Patch cl-tuition's run function to wrap make-thread inside signal handlers with sb-sys:with-interrupts.
+;; This prevents "poll(2) without a timeout while interrupts are disabled" warnings and locks on window resizing.
+#+sbcl
+(sb-ext:without-package-locks
+  (defun run (program)
+    "Run the program's main loop. Blocks until the program exits.
+In v2, starts with minimal terminal setup (raw mode only).
+Terminal modes are applied declaratively from the first view-state render."
+    (let* ((opts (program-options program))
+           (pool-size (getf opts :pool-size))
+           (*current-program* program)
+           ;; Open /dev/tty for direct terminal I/O
+           (tty-stream (get-tty-stream))
+           (*standard-output* (or tty-stream *standard-output*)))
+      ;; Minimal terminal setup - just raw mode and bracketed paste
+      ;; Alt-screen, mouse, focus etc. are handled by view-state transitions
+      (with-raw-terminal ()
+        (setf (program-running program) t)
+
+        ;; Initialize thread pool if enabled
+        (when (and *use-thread-pool* pool-size)
+          (setf (program-cmd-pool program) (make-pool pool-size program)))
+
+        ;; Use /dev/tty stream if available
+        (setf (program-tty-stream program) (or tty-stream *terminal-io*))
+        (when tty-stream
+          (setf (output-stream (program-renderer program)) tty-stream))
+
+        ;; Set up signal handlers (POSIX signals not available on Windows)
+        #+(and sbcl (not windows))
+        (let ((old-sigwinch-handler nil)
+              (old-sigtstp-handler nil)
+              (old-sigcont-handler nil))
+          ;; SIGWINCH - terminal resize
+          ;; Signal handlers must not call send directly (mutex acquisition is
+          ;; unsafe in signal context).  Defer the send to a short-lived thread.
+          (setf old-sigwinch-handler
+                (sb-sys:enable-interrupt
+                 sb-posix:sigwinch
+                 (lambda (signal code scp)
+                   (declare (ignore signal code scp))
+                   (unless *exec-suspended*
+                     (let* ((size (get-terminal-size))
+                            (width (car size))
+                            (height (cdr size)))
+                       ;; Update renderer dimensions (slot writes are safe)
+                       (setf (renderer-width (program-renderer program)) width
+                             (renderer-height (program-renderer program)) height)
+                       ;; Defer channel send to a new thread
+                       (sb-sys:with-interrupts
+                         (bt:make-thread
+                          (lambda ()
+                            (send program (make-window-size-msg :width width :height height)))
+                          :name "tuition-sigwinch")))))))
+
+          ;; SIGTSTP - suspend (Ctrl+Z)
+          (setf old-sigtstp-handler
+                (sb-sys:enable-interrupt
+                 sb-posix:sigtstp
+                 (lambda (signal code scp)
+                   (declare (ignore signal code scp))
+                   ;; Suspend based on current view-state
+                   (let* ((renderer (program-renderer program))
+                          (vs (last-view-state renderer)))
+                     (setf (program-restore-fn program)
+                           (suspend-terminal
+                            :alt-screen (and vs (view-state-alt-screen vs))
+                            :mouse (and vs (view-state-mouse-mode vs))
+                            :focus-events (and vs (view-state-report-focus vs)))))
+                   (sb-posix:kill (sb-posix:getpid) sb-posix:sigstop))))
+
+          ;; SIGCONT - resume after suspension
+          (setf old-sigcont-handler
+                (sb-sys:enable-interrupt
+                 sb-posix:sigcont
+                 (lambda (signal code scp)
+                   (declare (ignore signal code scp))
+                   (when (program-restore-fn program)
+                     (resume-terminal (program-restore-fn program))
+                     (setf (program-restore-fn program) nil))
+                   ;; Defer channel send to a new thread
+                   (sb-sys:with-interrupts
+                     (bt:make-thread
+                      (lambda ()
+                        (send program (make-resume-msg)))
+                      :name "tuition-sigcont")))))
+
+          ;; Start input thread
+          (let ((input-thread (bt:make-thread
+                               (lambda () (input-loop program))
+                               :name "tuition-input")))
+
+            ;; Send initial window size and update renderer dimensions
+            (let* ((size (get-terminal-size))
+                   (width (car size))
+                   (height (cdr size)))
+              (setf (renderer-width (program-renderer program)) width
+                    (renderer-height (program-renderer program)) height)
+              (send program (make-window-size-msg :width width :height height)))
+
+            ;; Run initial command
+            (let ((init-cmd (init (program-model program))))
+              (when init-cmd
+                (run-command program init-cmd)))
+
+            ;; Render initial view
+            (render (program-renderer program)
+                    (view (program-model program)))
+
+            ;; Main event loop
+            (event-loop program)
+
+            ;; Shutdown
+            (setf (program-running program) nil)
+
+            ;; Clean up terminal state from last view-state
+            (let ((vs (last-view-state (program-renderer program))))
+              (when vs
+                (when (view-state-mouse-mode vs) (disable-mouse))
+                (when (view-state-report-focus vs) (disable-focus-events))
+                (when (view-state-keyboard-enhancements vs) (disable-kitty-keyboard))
+                (when (view-state-alt-screen vs) (exit-alt-screen))))
+
+            ;; Shutdown thread pool if active
+            (when (program-cmd-pool program)
+              (shutdown-pool (program-cmd-pool program))
+              (setf (program-cmd-pool program) nil))
+
+            (bt:join-thread input-thread)
+
+            ;; Restore old signal handlers
+            (when old-sigwinch-handler
+              (sb-sys:enable-interrupt sb-posix:sigwinch old-sigwinch-handler))
+            (when old-sigtstp-handler
+              (sb-sys:enable-interrupt sb-posix:sigtstp old-sigtstp-handler))
+            (when old-sigcont-handler
+              (sb-sys:enable-interrupt sb-posix:sigcont old-sigcont-handler))))
+
+        #-(and sbcl (not windows))
+        (progn
+          ;; Non-SBCL or Windows
+          (let ((input-thread (bt:make-thread
+                               (lambda () (input-loop program))
+                               :name "tuition-input")))
+            (let ((init-cmd (init (program-model program))))
+              (when init-cmd
+                (run-command program init-cmd)))
+            (render (program-renderer program)
+                    (view (program-model program)))
+            (event-loop program)
+            (setf (program-running program) nil)
+
+            ;; Clean up terminal state from last view-state
+            (let ((vs (last-view-state (program-renderer program))))
+              (when vs
+                (when (view-state-mouse-mode vs) (disable-mouse))
+                (when (view-state-report-focus vs) (disable-focus-events))
+                (when (view-state-keyboard-enhancements vs) (disable-kitty-keyboard))
+                (when (view-state-alt-screen vs) (exit-alt-screen))))
+
+            ;; Shutdown thread pool if active
+            (when (program-cmd-pool program)
+              (shutdown-pool (program-cmd-pool program))
+              (setf (program-cmd-pool program) nil))
+
+            (bt:join-thread input-thread)))
+        ) ; close with-raw-terminal
+      ;; Clean up /dev/tty stream after terminal is restored
+      (close-tty-stream))))
+
 (in-package :raw-to-hdri)
 
 ;;; Struct for file item information
